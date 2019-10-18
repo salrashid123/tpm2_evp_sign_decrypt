@@ -68,10 +68,6 @@ openssl req -new -x509 -engine tpm2tss -key private.tss -keyform engine -out pub
 openssl x509 -pubkey -noout -in public.crt  > public.pem
 openssl x509 -in public.crt -text -noout
 ```
-
-- For the TPM, embed the keys:
-   See steps 3,4 at [https://github.com/salrashid123/oauth2#tpmtokensource](https://github.com/salrashid123/oauth2#tpmtokensource)
-
 - Compile and run the sample application
 
 ```
@@ -97,6 +93,7 @@ I've left commented out sections in the code that shows how the operations run w
 - https://wiki.openssl.org/index.php/EVP
 - https://github.com/tpm2-software/tpm2-tss-engine/blob/master/INSTALL.md
 - https://github.com/salrashid123/jwt-samples
+- [https://github.com/salrashid123/oauth2#tpmtokensource](https://github.com/salrashid123/oauth2#tpmtokensource)
 
 
 
