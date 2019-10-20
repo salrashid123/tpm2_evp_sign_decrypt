@@ -37,7 +37,13 @@ ref: https://medium.com/google-cloud/faster-serviceaccount-authentication-for-go
     openssl pkcs12 -in svc_account.p12  -nocerts -nodes -passin pass:notasecret | openssl rsa -out private.pem
     openssl rsa -in private.pem -outform PEM -pubout -out public.pem
 3) Embed the key into a TPM 
-    https://github.com/salrashid123/tpm2_evp_sign_decrypt
+    install TPM2-Tools
+    https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md
+
+    tpm2_createprimary -C o -g sha256 -G rsa -c primary.ctx
+    tpm2_import -C primary.ctx -G rsa -i private.pem -u key.pub -r key.prv
+    tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
+    tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
 4) Edit issuer,subject,audience fields incode below
    Get the issuer, subject email for the service account and apply it into code below.
