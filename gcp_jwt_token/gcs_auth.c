@@ -259,14 +259,8 @@ int main(int argc, char *argv[])
   char *b64jwt = Base64Encode(jwt_header, strlen(jwt_header));
   char *b64claim = Base64Encode(claims_set, strlen(claims_set));
 
-  free(claims);
-  free(claims_set);
-
   char *j1 = concat(b64jwt, ".");
   char *jwt = concat(j1, b64claim);
-  free(j1);
-  free(b64jwt);
-  free(b64claim);
 
   int len = strlen(jwt);
   byte msg[len];
@@ -291,9 +285,6 @@ int main(int argc, char *argv[])
   char *final = strcat(strcat(jwt, "."), b64sig);
 
   printf("%s\n", final);
-
-  free(jwt);
-  free(b64sig);
 
   ENGINE_finish(e);
   ENGINE_free(e);
