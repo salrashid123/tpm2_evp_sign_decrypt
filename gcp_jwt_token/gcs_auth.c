@@ -294,6 +294,12 @@ int main(int argc, char *argv[])
 
   free(jwt);
   free(b64sig);
+
+  ENGINE_finish(e);
+  ENGINE_free(e);
+
+  EVP_cleanup();
+  ERR_free_strings();
 }
 
 // From: https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
