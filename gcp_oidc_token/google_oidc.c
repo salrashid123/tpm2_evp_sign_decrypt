@@ -15,6 +15,8 @@
 #include <openssl/bio.h>
 #include <openssl/engine.h>
 
+#include <curl/curl.h>
+
 #include <cjson/cJSON.h>
 
 // Start TPM
@@ -23,14 +25,14 @@
 #include <tpm2-tss-engine.h>
 // End TPM
 
+
 /*
-Sample app that mints a JWTAccess token using RSA keypair derived from a Google Service Account .p12.
+Acquire Google OpenID Connect (OIDC) token for a Service Account.
 
-This is NOT supported by google and is provided as-is.  
+To use, edit issuer, subject and target_audience vaules
 
-(also, i dont' really know c...there are  somethings i didn't free() or have done incorrectly in c)
-
-ref: https://medium.com/google-cloud/faster-serviceaccount-authentication-for-google-cloud-platform-apis-f1355abc14b2
+Service Account key must be in .p12 format:
+   https://cloud.google.com/iam/docs/service-accounts
 
 1) Download Service account .p12 file
 2) Extract public/private keypair
@@ -45,40 +47,27 @@ ref: https://medium.com/google-cloud/faster-serviceaccount-authentication-for-go
     tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
     tpm2_evictcontrol -C o -c key.ctx 0x81010002
 
-4) Edit issuer,subject,audience fields incode below
-   Get the issuer, subject email for the service account and apply it into code below.
-
 5) Compile
     apt-get install libcurl4-openssl-dev libssl-dev
 
     git clone https://github.com/DaveGamble/cJSON.git
     cd cJSON
     make
+    make install
 
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1:
 
-    default: gcc gcs_auth.c -lcjson -lcrypto -o gcs_auth
-
-    or with a TPM (requires tpm2-tss-engine installed)
-    gcc gcs_auth.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -ltpm2tss -lcjson -o gcs_auth
-
+    gcc google_oidc.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -lcurl -o google_oidc
+    
 6) Run
-     ./gcs_auth
+     ./google_oidc
 
-7) Use the JWT to access a service like pubsub:
-    export TOKEN=<..>
-    curl -v -H "Authorization: Bearer $TOKEN" -H "pubsub.googleapis.com" -o /dev/null -w "%{http_code}\n" https://pubsub.googleapis.com/v1/projects/yourPROJECT/topics
 
-https://github.com/googleapis/google-cloud-cpp
-
-Attribution:
-  https://incolumitas.com/2012/10/29/web-safe-base64-encodedecode-in-c/
-  https://github.com/DaveGamble/cJSON.git
-
-References:
-  https://medium.com/google-cloud/faster-serviceaccount-authentication-for-google-cloud-platform-apis-f1355abc14b2
-  https://github.com/googleapis/google-cloud-cpp/blob/master/google/cloud/storage/internal/openssl_util.cc#L215
-  https://github.com/salrashid123/salrashid123.github.io/tree/master/tpm_openssl_client
+Attribuion:
+ https://curl.haxx.se/libcurl/c/getinmemory.html
+ https://github.com/DaveGamble/cJSON
+ https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
+ https://incolumitas.com/2012/10/29/web-safe-base64-encodedecode-in-c/
 */
 
 typedef unsigned char byte;
@@ -86,11 +75,13 @@ typedef unsigned char byte;
 #define UNUSED(x) ((void)x)
 const char hn[] = "SHA256";
 
-const char *issuer = "svc-2-429@project.iam.gserviceaccount.com";
-const char *subject = "svc-2-429@project.iam.gserviceaccount.com";
-const char *audience = "https://pubsub.googleapis.com/google.pubsub.v1.Publisher";
+const char *issuer = "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com";
+const char *subject = "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com";
+const char *target_audience = "https://foo.bar";
 const char *pubfilename = "public.pem";
 const char *privfilename = "private.pem";
+
+const char *audience = "https://oauth2.googleapis.com/token";
 
 /* Returns 0 for success, non-0 otherwise */
 int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey);
@@ -141,6 +132,34 @@ struct string
   size_t len;
 };
 
+struct MemoryStruct
+{
+  char *memory;
+  size_t size;
+};
+
+static size_t
+WriteMemoryCallback(void *contents, size_t size, size_t nmemb, void *userp)
+{
+  size_t realsize = size * nmemb;
+  struct MemoryStruct *mem = (struct MemoryStruct *)userp;
+
+  char *ptr = realloc(mem->memory, mem->size + realsize + 1);
+  if (ptr == NULL)
+  {
+    /* out of memory! */
+    printf("not enough memory (realloc returned NULL)\n");
+    return 0;
+  }
+
+  mem->memory = ptr;
+  memcpy(&(mem->memory[mem->size]), contents, realsize);
+  mem->size += realsize;
+  mem->memory[mem->size] = 0;
+
+  return realsize;
+}
+
 int main(int argc, char *argv[])
 {
 
@@ -171,13 +190,13 @@ int main(int argc, char *argv[])
   OpenSSL_add_all_algorithms();
 
   EVP_PKEY *vkey, *skey;
-  FILE *pubf = fopen(pubfilename, "rb");
+  // FILE *pubf = fopen(pubfilename, "rb");
 
-  printf("Loading public key \n");
-  vkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
+  // printf("Loading public key \n");
+  // vkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
 
-  FILE *privf = fopen(privfilename, "rb");
-  printf("Loading private key \n");
+  // FILE *privf = fopen(privfilename, "rb");
+  // printf("Loading private key \n");
 
   // Start default
   //skey = PEM_read_PrivateKey(privf, NULL, NULL, NULL);
@@ -221,6 +240,15 @@ int main(int argc, char *argv[])
   //
   // End TPM
 
+  CURL *curl;
+  CURLcode res;
+  curl_global_init(CURL_GLOBAL_ALL);
+  curl = curl_easy_init();
+  curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSLENGINE_DEFAULT, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 1L);
+  curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 1L);
+
   cJSON *header = cJSON_CreateObject();
   cJSON *alg = NULL;
   cJSON *typ = NULL;
@@ -230,7 +258,7 @@ int main(int argc, char *argv[])
   cJSON_AddItemToObject(header, "typ", typ);
 
   char *jwt_header = cJSON_Print(header);
-  printf("%s", jwt_header);
+  //printf("%s", jwt_header);
 
   cJSON *claims = cJSON_CreateObject();
   long now = time(0);
@@ -239,6 +267,7 @@ int main(int argc, char *argv[])
   cJSON *iss = NULL;
   cJSON *sub = NULL;
   cJSON *aud = NULL;
+  cJSON *target_aud = NULL;
   cJSON *iat = NULL;
   cJSON *exp = NULL;
 
@@ -248,6 +277,8 @@ int main(int argc, char *argv[])
   cJSON_AddItemToObject(claims, "sub", sub);
   aud = cJSON_CreateString(audience);
   cJSON_AddItemToObject(claims, "aud", aud);
+  target_aud = cJSON_CreateString(target_audience);
+  cJSON_AddItemToObject(claims, "target_audience", target_aud);
   iat = cJSON_CreateNumber(now);
   cJSON_AddItemToObject(claims, "iat", iat);
   exp = cJSON_CreateNumber(expire_on);
@@ -273,27 +304,85 @@ int main(int argc, char *argv[])
   int rc = sign_it(msg, sizeof(msg), &sig, &slen, skey);
   char *b64sig = Base64Encode((char *)sig, slen);
 
-  if (sig)
-    OPENSSL_free(sig);
 
-  if (skey)
-    EVP_PKEY_free(skey);
-
-  if (vkey)
-    EVP_PKEY_free(vkey);
-
-  char *final = strcat(strcat(jwt, "."), b64sig);
-
-  printf("%s\n", final);
-
+  OPENSSL_free(sig);
+  EVP_PKEY_free(skey);
+  EVP_PKEY_free(vkey);
   ENGINE_finish(e);
   ENGINE_free(e);
 
-  EVP_cleanup();
-  ERR_free_strings();
+  char *header_payload_part = concat(jwt,".");
+  char *signedJWT = concat(header_payload_part, b64sig);
+
+  //printf("%s\n", signedJWT);
+
+  // ********************************************************************** //
+
+  curl_easy_setopt(curl, CURLOPT_URL, "https://oauth2.googleapis.com/token");
+  //curl_easy_setopt(curl, CURLOPT_VERBOSE, 1L);
+  curl_easy_setopt(curl, CURLOPT_POST, 1L);
+
+  struct MemoryStruct chunk;
+
+  chunk.memory = malloc(1); /* will be grown as needed by the realloc above */
+  chunk.size = 0;           /* no data at this point */
+
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteMemoryCallback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void *)&chunk);
+  char *postfields = concat("grant_type=urn:ietf:params:oauth:grant-type:jwt-bearer", concat("&assertion=", signedJWT));
+  curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postfields);
+
+  res = curl_easy_perform(curl);
+
+  if (res != CURLE_OK)
+  {
+    fprintf(stderr, "curl_easy_perform() failed: %s\n",
+            curl_easy_strerror(res));
+    return -1;
+  }
+  else
+  {
+   // printf("%lu bytes retrieved\n", (unsigned long)chunk.size);
+  }
+
+  int numBytes = chunk.size;
+  char *pChar = (char *)malloc(numBytes);
+  for (int i = 0; i < numBytes; i++)
+  {
+    pChar[i] = chunk.memory[i];
+  }
+
+  free(chunk.memory);
+
+  long http_code = 0;
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code);
+  if (http_code == 200 && res != CURLE_ABORTED_BY_CALLBACK)
+  {
+    cJSON *json = cJSON_Parse(pChar);
+    char *s = cJSON_Print(json);
+
+    const cJSON *id_token = NULL;
+    id_token = cJSON_GetObjectItemCaseSensitive(json, "id_token");
+    if (cJSON_IsString(id_token) && (id_token->valuestring != NULL))
+    {
+      printf("%s\n", id_token->valuestring);
+    }
+    else
+    {
+      printf("Unable to parse Idtoken response\n");
+      return -1;
+    }
+  }
+  else
+  {
+    printf("Unable to get ID Token Response: %s\n", pChar);
+    return -1;
+  }
+  free(pChar);
+  curl_easy_cleanup(curl);
+  curl_global_cleanup();
 }
 
-// From: https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
 int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey)
 {
   /* Returned to caller */
@@ -422,8 +511,6 @@ void print_it(const char *label, const byte *buff, size_t len)
 
   printf("\n");
 }
-
-// From: https://incolumitas.com/2012/10/29/web-safe-base64-encodedecode-in-c/
 char *
 Base64Encode(char *input, unsigned int inputLen)
 {

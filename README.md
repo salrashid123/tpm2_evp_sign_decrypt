@@ -4,7 +4,9 @@ Basic application that uses a the [tpm2-tss-engine](https://github.com/tpm2-soft
 
 This is intended to run on a system with a TPM as well as the the openssl engine library installed.  The TPM-based private key is generated directly using `tpm2tss-genkey` and from that, the openssl engine to surface the public part.  The tpm2-tss-engine surfaces the OpenSSL constructs like `EVP_PKEY_RSA` so you can directly use that against the TPM
 
-Also included is a sample application that uses a Google Cloud ServiceAccount embedded within a TPM to sign a JWT.  This JWT can then be used to access a google cloud resource.
+Also included:
+- `gcp_jwt_token`: application that uses a Google Cloud ServiceAccount embedded within a TPM to sign a JWT.  This JWT can then be used to access a google cloud resource such as Pub/Sub
+- `gcp_oidc_token`: application that uses a Google Cloud ServiceAccount embedded within a TPM to sign a JWT and then exchange it for a Google Issued OIDC token.  This oidc token can be used to authenticate against user-deployed resources behind Cloud Run, Cloud Functions, etc.  For more information, see [google-oidc-token](https://github.com/salrashid123/google_id_token)
 
 As its a basic helloworld app (and because i really don't know c, _caveat emptor_)
 
@@ -23,7 +25,9 @@ On  system that has a TPM you don't mind messing with, (in this example a google
 - Install the `tpm2-tss` and `tpm2-tss-engine`
 
 ```
-sudo apt-get update && apt -y install \
+sudo su -
+
+apt-get update && apt -y install \
   build-essential \
   autoconf \
   autoconf-archive \
@@ -117,13 +121,15 @@ To use this mode, you'll also need `tpm2-tools`
     git clone https://github.com/DaveGamble/cJSON.git
     cd cJSON
     make
+    make install
 
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1:`pwd`/cJSON
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1
 
-    default: gcc -I./cJSON gcs_auth.c -L./cJSON -lcrypto -lcjson -o gcs_auth
+    default: gcc gcs_auth.c -lcrypto -lcjson -o gcs_auth
 
     or with a TPM (requires tpm2-tss-engine installed)
-    gcc -I./cJSON gcs_auth.c -L./cJSON -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -o gcs_auth
+   
+    gcc gcs_auth.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -o gcs_auth
 
 6) Run
      ./gcs_auth
@@ -131,6 +137,14 @@ To use this mode, you'll also need `tpm2-tools`
 7) Use the JWT to access a service like pubsub:
     export TOKEN=<..>
     curl -v -H "Authorization: Bearer $TOKEN" -H "pubsub.googleapis.com" -o /dev/null -w "%{http_code}\n" https://pubsub.googleapis.com/v1/projects/yourPROJECT/topics
+```
+
+
+### Google OIDC Token for GCP Authentication
+
+Follow steps 1->3 above, edit `google_oidc.c` and specify `issuer`, `subject`, `target_audience`
+```
+  gcc  google_oidc.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -lcurl -o google_oidc
 ```
 
 ### References
