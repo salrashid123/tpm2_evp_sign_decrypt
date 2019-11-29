@@ -118,7 +118,7 @@ Anyway, either do (A) or (B) below (A is easier)
 
 3) Embed the key into a TPM 
     install TPM2-Tools
-    (https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md)(https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md)
+    [https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md](https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md)
 
 ```
     tpm2_createprimary -C o -g sha256 -G rsa -c primary.ctx
@@ -176,7 +176,7 @@ a03f0c4c61864b7fe20db909a3174c6b844f8909  2019-11-27T23:20:16Z  2020-12-31T23:20
 ```
 
 
-#### Generate Access TOken Credentials
+#### Generate Access Token Credentials
 
 1) Edit issuer,subject,audience fields incode below
    Get the issuer, subject email for the service account and apply it into code below.
@@ -199,11 +199,11 @@ a03f0c4c61864b7fe20db909a3174c6b844f8909  2019-11-27T23:20:16Z  2020-12-31T23:20
     gcc gcs_auth.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -o gcs_auth
 ```
 3) Run
+
 ```
      ./gcs_auth
 ```
 4) Use the JWT to access a service like pubsub:
-```
     export TOKEN=<..>
     curl -v -H "Authorization: Bearer $TOKEN" -H "pubsub.googleapis.com" -o /dev/null -w "%{http_code}\n" https://pubsub.googleapis.com/v1/projects/yourPROJECT/topics
 ```
