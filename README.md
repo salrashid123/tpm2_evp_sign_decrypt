@@ -203,20 +203,24 @@ a03f0c4c61864b7fe20db909a3174c6b844f8909  2019-11-27T23:20:16Z  2020-12-31T23:20
 ```
      ./gcs_auth
 ```
+
 4) Use the JWT to access a service like pubsub:
+
+```
     export TOKEN=<..>
     curl -v -H "Authorization: Bearer $TOKEN" -H "pubsub.googleapis.com" -o /dev/null -w "%{http_code}\n" https://pubsub.googleapis.com/v1/projects/yourPROJECT/topics
 ```
 
-
 ### Google OIDC Token for GCP Authentication
 
-Follow steps 1->3 above, edit `google_oidc.c` and specify `issuer`, `subject`, `target_audience`
+Follow steps 1->3 above, edit `google_oidc.c` and specify `issuer`, `subject`, `target_audience`:
+
 ```
   gcc  google_oidc.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -lcurl -o google_oidc
 ```
 
 ### References
+
 - https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
 - https://wiki.openssl.org/index.php/EVP
 - https://github.com/tpm2-software/tpm2-tss-engine/blob/master/INSTALL.md
