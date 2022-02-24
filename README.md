@@ -11,6 +11,14 @@ Also included:
 As its a basic helloworld app (and because i **really don't know c**, _caveat emptor_)
 
 
+for TPM stuff, you may also be interested in
+
+* [nginx with TPM based SSL](https://blog.salrashid.dev/articles/2021/nginx_with_tpm_ssl/)
+* [golang-jwt library for Trusted Platform Module (TPM)](https://blog.salrashid.dev/articles/2021/go-jwt-tpm/)
+* [AWS v4 Signer for embedding Access Secrets to PKCS11 and TPMs](https://blog.salrashid.dev/articles/2021/aws_hmac/)
+* [mTLS with TPM bound private key](https://blog.salrashid.dev/articles/2020/go_tpm_https_embed/)
+* [Trusted Platform Module (TPM) recipes with tpm2_tools and go-tpm](https://github.com/salrashid123/tpm2)
+
 ### Usage
 
 On  system that has a TPM you don't mind messing with, (in this example a google cloud [ShieldedVM](https://cloud.google.com/security/shielded-cloud/shielded-vm)
