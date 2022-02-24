@@ -8,7 +8,7 @@ Also included:
 - `gcp_jwt_token`: application that uses a Google Cloud ServiceAccount embedded within a TPM to sign a JWT.  This JWT can then be used to access a google cloud resource such as Pub/Sub
 - `gcp_oidc_token`: application that uses a Google Cloud ServiceAccount embedded within a TPM to sign a JWT and then exchange it for a Google Issued OIDC token.  This oidc token can be used to authenticate against user-deployed resources behind Cloud Run, Cloud Functions, etc.  For more information, see [google-oidc-token](https://github.com/salrashid123/google_id_token)
 
-As its a basic helloworld app (and because i really don't know c, _caveat emptor_)
+As its a basic helloworld app (and because i **really don't know c**, _caveat emptor_)
 
 
 ### Usage
@@ -18,7 +18,14 @@ On  system that has a TPM you don't mind messing with, (in this example a google
 
 - Create the instance
 ```
- gcloud  compute  instances create shielded-5 --zone=us-central1-a --machine-type=n1-standard-1 --subnet=default --network-tier=PREMIUM  --no-service-account --no-scopes --image=ubuntu-1804-bionic-v20191002 --image-project=gce-uefi-images --no-shielded-secure-boot --shielded-vtpm --shielded-integrity-monitoring
+gcloud  compute  instances create shielded-5 \
+ --zone=us-central1-a --machine-type=n1-standard-1 \
+ --subnet=default --network-tier=PREMIUM \
+  --no-service-account --no-scopes \
+  --image=debian-11-bullseye-v20220120 \
+  --image-project=debian-cloud \
+  --no-shielded-secure-boot \
+  --shielded-vtpm --shielded-integrity-monitoring
 ```
 
 
@@ -40,6 +47,7 @@ apt-get update && apt -y install \
   pandoc \
   doxygen \
   git \
+  libjson-c-dev \
   libcurl4-openssl-dev
 
 cd
@@ -65,7 +73,10 @@ git clone https://github.com/tpm2-software/tpm2-tss-engine.git
 - Generate the public/private RSA keys
 
 ```
-cd 
+cd
+git clone https://github.com/salrashid123/tpm2_evp_sign_decrypt.git
+cd tpm2_evp_sign_decrypt
+
 touch /root/.rnd
 tpm2tss-genkey -a rsa private.tss
 openssl req -new -x509 -engine tpm2tss -key private.tss -keyform engine -out public.crt  -subj "/C=SM/ST=somecountry/L=someloc/O=someorg/OU=somedept/CN=example.com"
@@ -80,9 +91,37 @@ gcc tpm_encrypt_decrypt.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -ltp
 gcc tpm_sign_verify.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -ltpm2tss -o tpm_sign_verify
 ```
 
+- Encrypt/Decrypt
+
 ```
-./tpm_encrypt_decrypt
+# ./tpm_encrypt_decrypt
+    Ciphertext is:
+    0000 - 42 14 77 4a 47 c7 f5 06-3d f8 c1 1e 9c b2 b3 45   B.wJG...=......E
+    0010 - e7 49 58 39 cb a4 70 87-07 83 f0 5c 2f a6 1a 1d   .IX9..p....\/...
+    0020 - 63 4d 69 99 6b 42 37 93-80 62 23 21 55 28 c8 3e   cMi.kB7..b#!U(.>
+    Loading private key 
+    Loaded key uses alg-id 1
+    EmptyAuth
+    TPM2_ALG_RSA
+    Loaded key uses private handle 200000de
+    Decrypted text is:
+    This is a test string to encrypt.
+```
+
+
+- Sign/Verify
+
+```
 ./tpm_sign_verify
+    Loading public key 
+    Loading private key 
+    Loaded key uses alg-id 1
+    EmptyAuth
+    TPM2_ALG_RSA
+    Loaded key uses private handle 200000de
+    Created signature
+    Signature: 65A3396F33524B620499F0733C5DFA5056E5E9C7980AA5BCF318DC2821A849B7EAD68FAE23A54C3D67055BA8934090AE5365A7CBCA94C9B935A6201562736245932F6D7834F4F4F52276DBA08DE40AE35F4FAE5C0DC578D044CF490B42E7AC33018375FBF0155CE3ECE420891E1FF75360064A30616BEE35796705B4A885274F549ADE1A694850E0875742AD129F0C6983BBCF731BD73BB8F681027931FD2E8A38159DEDD0DD8F4EE9477B6005A6348583F4265B3241BAFEC391057490E8CFC80520A968251C815AD00CC8492D736ABE5D1B9CBF2B633BE445AB2EC089A7C5551750DCAF353AF7E53BFF3CEF6D9CDD6261306F76839E08751B28E565F1E95549
+    Verified signature
 ```
 
 I've left commented out sections in the code that shows how the operations run while reading non-TPM based keys
