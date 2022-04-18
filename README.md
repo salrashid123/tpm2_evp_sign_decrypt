@@ -188,9 +188,25 @@ tpm2_readpublic -c key.ctx -f PEM -o key.pem
 
 2) use the TPM based private key to create an `x509` certificate
 
-You can use [certgen.go](https://raw.githubusercontent.com/salrashid123/signer/master/certgen/certgen.go) here.  Remember to use 
+You can use `util/certgen/certgen.go` from [https://github.com/salrashid123/signer](https://github.com/salrashid123/signer) to create an x509 or CSR using the embedded device
+
+```bash
+git clone https://github.com/salrashid123/signer.git
+cd signer/util
+```
+
+edit `certgen/certgen.go`
+
+use ` 
+
 
 ```golang
+import (
+
+  saltpm "github.com/salrashid123/signer/tpm"
+)
+
+
 	r, err := saltpm.NewTPMCrypto(&saltpm.TPM{
 		TpmDevice: "/dev/tpm0",
 		TpmHandle: 0x81010002,
@@ -199,7 +215,8 @@ You can use [certgen.go](https://raw.githubusercontent.com/salrashid123/signer/m
 
 the output should be just `cert.pem` which is infact just the x509 certificate we will use to import
 ```
- go run certgen.go 
+go run certgen/certgen.go -cn YOURServiceAccountName@PROJECT_ID.iam.gserviceaccount.com
+
 2019/11/28 00:49:55 Creating public x509
 2019/11/28 00:49:55 wrote cert.pem
 ```
@@ -209,7 +226,7 @@ the output should be just `cert.pem` which is infact just the x509 certificate w
 The following steps are outelined [here](https://cloud.google.com/iam/docs/creating-managing-service-account-keys#uploading).
 
 ```
-gcloud alpha iam service-accounts keys upload cert.pem  --iam-account YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com
+gcloud iam service-accounts keys upload cert.pem  --iam-account YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com
 ```
 
 Verify...you should see a new certificate.  Note down the `KEY_ID`
@@ -222,11 +239,23 @@ a03f0c4c61864b7fe20db909a3174c6b844f8909  2019-11-27T23:20:16Z  2020-12-31T23:20
 7077c0c9164252fcfb73d8ccbd68f8c97e0ffee6  2019-11-27T23:15:32Z  2021-12-01T05:43:27Z
 ```
 
+4) Extract the public key from the cert
+  
+```
+openssl x509 -pubkey -noout -in cert.pem  > public.pem
+```
 
 #### Generate Access Token Credentials
 
 1) Edit issuer,subject,audience fields incode below
    Get the issuer, subject email for the service account and apply it into code below.
+
+   eg edit `gcp_jwt_token/gcs_auth.c`, set
+
+   ```cpp
+   const char *issuer = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
+   const char *subject = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
+   ```
 
 2) Compile
 ```
@@ -237,7 +266,7 @@ a03f0c4c61864b7fe20db909a3174c6b844f8909  2019-11-27T23:20:16Z  2020-12-31T23:20
     make
     make install
 
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1:/usr/local/lib
 
     default: gcc gcs_auth.c -lcrypto -lcjson -o gcs_auth
 
@@ -264,6 +293,7 @@ Follow steps 1->3 above, edit `google_oidc.c` and specify `issuer`, `subject`, `
 
 ```
   gcc  google_oidc.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -lcjson -ltpm2tss -lcurl -o google_oidc
+  ./google_oidc 
 ```
 
 ### References

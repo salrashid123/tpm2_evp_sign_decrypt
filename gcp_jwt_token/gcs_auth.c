@@ -86,8 +86,8 @@ typedef unsigned char byte;
 #define UNUSED(x) ((void)x)
 const char hn[] = "SHA256";
 
-const char *issuer = "svc-2-429@project.iam.gserviceaccount.com";
-const char *subject = "svc-2-429@project.iam.gserviceaccount.com";
+const char *issuer = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
+const char *subject = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
 const char *audience = "https://pubsub.googleapis.com/google.pubsub.v1.Publisher";
 const char *pubfilename = "public.pem";
 const char *privfilename = "private.pem";
@@ -171,12 +171,12 @@ int main(int argc, char *argv[])
   OpenSSL_add_all_algorithms();
 
   EVP_PKEY *vkey, *skey;
-  FILE *pubf = fopen(pubfilename, "rb");
+  //FILE *pubf = fopen(pubfilename, "rb");
 
-  printf("Loading public key \n");
-  vkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
+  //printf("Loading public key \n");
+  //vkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
 
-  FILE *privf = fopen(privfilename, "rb");
+  //FILE *privf = fopen(privfilename, "rb");
   printf("Loading private key \n");
 
   // Start default

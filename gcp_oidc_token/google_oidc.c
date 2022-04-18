@@ -75,8 +75,8 @@ typedef unsigned char byte;
 #define UNUSED(x) ((void)x)
 const char hn[] = "SHA256";
 
-const char *issuer = "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com";
-const char *subject = "svc-2-429@mineral-minutia-820.iam.gserviceaccount.com";
+const char *issuer = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
+const char *subject = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
 const char *target_audience = "https://foo.bar";
 const char *pubfilename = "public.pem";
 const char *privfilename = "private.pem";
@@ -258,7 +258,7 @@ int main(int argc, char *argv[])
   cJSON_AddItemToObject(header, "typ", typ);
 
   char *jwt_header = cJSON_Print(header);
-  //printf("%s", jwt_header);
+  printf("%s", jwt_header);
 
   cJSON *claims = cJSON_CreateObject();
   long now = time(0);
@@ -304,17 +304,16 @@ int main(int argc, char *argv[])
   int rc = sign_it(msg, sizeof(msg), &sig, &slen, skey);
   char *b64sig = Base64Encode((char *)sig, slen);
 
-
   OPENSSL_free(sig);
-  EVP_PKEY_free(skey);
-  EVP_PKEY_free(vkey);
+  //EVP_PKEY_free(skey);
+  //EVP_PKEY_free(vkey);
   ENGINE_finish(e);
   ENGINE_free(e);
 
   char *header_payload_part = concat(jwt,".");
   char *signedJWT = concat(header_payload_part, b64sig);
 
-  //printf("%s\n", signedJWT);
+  printf("%s\n", signedJWT);
 
   // ********************************************************************** //
 
