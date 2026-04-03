@@ -11,19 +11,27 @@
 // Start TPM
 #include <tss2/tss2_mu.h>
 #include <tss2/tss2_esys.h>
-#include <tpm2-tss-engine.h>
+#include <openssl/provider.h>
+#include <openssl/err.h>
+
+#include <openssl/core_names.h>
+#include <openssl/store.h>
+#include <openssl/ui.h>
+
 // End TPM
 
-// https://github.com/tpm2-software/tpm2-tss-engine
-// tpm2tss-genkey -a rsa private.tss
-// openssl req -new -x509 -engine tpm2tss -key private.tss -keyform engine -out public.crt  -subj "/C=SM/ST=somecountry/L=someloc/O=someorg/OU=somedept/CN=example.com"
-// openssl x509 -pubkey -noout -in public.crt  > public.pem
-// openssl x509 -in public.crt -text -noout
+int provide_password(char *buf, int size, int rwflag, void *u)
+{
+    const char *password = (char *)u;
 
-// export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1/
-// gcc tpm_encrypt_decrypt.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -ltpm2tss -o tpm_encrypt_decrypt
+    size_t len = strlen(password);
+    if (len > size)
+        len = size;
 
-// attribution: https://cis.gvsu.edu/~kalafuta/cis457/w19/labs/cryptotest.c
+    memcpy(buf, password, len);
+    return len;
+}
+
 
 void handleErrors(void)
 {
@@ -64,6 +72,7 @@ int rsa_decrypt(unsigned char *in, size_t inlen, EVP_PKEY *key, unsigned char *o
     handleErrors();
   if (EVP_PKEY_decrypt(ctx, out, &outlen, in, inlen) <= 0)
     handleErrors();
+  EVP_PKEY_CTX_free(ctx);    
   return outlen;
 }
 
@@ -110,36 +119,27 @@ int decrypt(unsigned char *ciphertext, int ciphertext_len, unsigned char *key,
 int main(void)
 {
 
-  ENGINE *e;
+    OSSL_PROVIDER* provider;
 
-  // Start TPM
-  const char *engine_id = "tpm2tss";
-  // End TPM
+    OSSL_PROVIDER *defprov = NULL, *tpm2prov = NULL;
 
-  // Start default
-  //const char *engine_id = "rdrand";
-  // End default
 
-  ENGINE_load_builtin_engines();
-  e = ENGINE_by_id(engine_id);
-  if (!e)
-  {
-    printf("Unable to get Engine:\n");
-    return -1;
-  }
-  if (!ENGINE_init(e))
-  {
-    printf("Unable to init Engine:\n");
-    ENGINE_free(e);
-    return -1;
-  }
-  if (!ENGINE_set_default_RSA(e))
-    abort();
+    if ((defprov = OSSL_PROVIDER_load(NULL, "default")) == NULL)
+        exit(EXIT_FAILURE);
 
-  ENGINE_set_default_ciphers(e);
+    if ((tpm2prov = OSSL_PROVIDER_load(NULL, "tpm2")) == NULL)
+         exit(EXIT_FAILURE);
 
-  const char *pubfilename = "public.pem";
-  const char *privfilename = "private.tss";
+    const char *password = "";
+    const char *pubfilename = "public.pem";
+    const char *privfilename = "private.tss";
+
+
+    OSSL_STORE_CTX *ctx = NULL;
+    UI_METHOD *ui_method = NULL;
+
+    unsigned char *sig = NULL;
+    size_t sig_len = 0;
 
   unsigned char key[32];
   unsigned char iv[16];
@@ -152,7 +152,7 @@ int main(void)
   OpenSSL_add_all_algorithms();
   RAND_bytes(key, 32);
   RAND_bytes(iv, 16);
-  EVP_PKEY *pubkey, *privkey;
+  EVP_PKEY *pubkey, *pkey;
   FILE *pubf = fopen(pubfilename, "rb");
   pubkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
   unsigned char encrypted_key[256];
@@ -169,58 +169,31 @@ int main(void)
   printf("Loading private key \n");
 
   // Start default
-  // privkey = PEM_read_PrivateKey(privf,NULL,NULL,NULL);
-  // End default
+
+
 
   // Start TPM >>>>>
   //
-  TPM2_DATA *tpm2Data = NULL;
-  tpm2tss_tpm2data_read(privfilename, &tpm2Data);
-  printf("Loaded key uses alg-id %x\n", tpm2Data->pub.publicArea.type);
+    if ((ctx = OSSL_STORE_open(privfilename, ui_method, (void *)password, NULL, NULL))) {
+        while (OSSL_STORE_eof(ctx) == 0) {
+            OSSL_STORE_INFO *info = OSSL_STORE_load(ctx);
+            if (info && OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
 
-  if (tpm2Data->emptyAuth)
-  {
-    printf("EmptyAuth\n");
-    tpm2Data->userauth.size = 0;
-  }
-  else
-  {
-    printf("Get User Auth\n");
-  }
+                if ((pkey = OSSL_STORE_INFO_get0_PKEY(info))) {
 
-  switch (tpm2Data->pub.publicArea.type)
-  {
-  case TPM2_ALG_RSA:
-    printf(" TPM2_ALG_RSA\n");
-    privkey = tpm2tss_rsa_makekey(tpm2Data);
-    break;
-  case TPM2_ALG_ECC:
-    printf(" TPM2_ALG_ECC\n");
-    privkey = tpm2tss_ecc_makekey(tpm2Data);
-    break;
-  default:
-    printf(" TPM2TSS_R_UNKNOWN_ALG\n");
-  }
-  if (!privkey)
-  {
-    printf("TPM2TSS_R_CANNOT_MAKE_KEY\n");
-  }
+                    unsigned char decrypted_key[32];
+                    int decryptedkey_len = rsa_decrypt(encrypted_key, encryptedkey_len, pkey, decrypted_key);
+                    decryptedtext_len = decrypt(ciphertext, ciphertext_len, decrypted_key, iv, decryptedtext);
+                    decryptedtext[decryptedtext_len] = '\0';
+                    printf("Decrypted text is:\n");
+                    printf("%s\n", decryptedtext);
 
-  printf("Loaded key uses private handle %x\n", tpm2Data->handle);
+                    EVP_PKEY_free(pkey);
 
-  // <<< END TPM
+                }}}
+              }
 
-  unsigned char decrypted_key[32];
-  int decryptedkey_len = rsa_decrypt(encrypted_key, encryptedkey_len, privkey, decrypted_key);
-  decryptedtext_len = decrypt(ciphertext, ciphertext_len, decrypted_key, iv, decryptedtext);
-  decryptedtext[decryptedtext_len] = '\0';
-  printf("Decrypted text is:\n");
-  printf("%s\n", decryptedtext);
-
-  EVP_PKEY_free(privkey);
-
-  ENGINE_finish(e);
-  ENGINE_free(e);
+    OSSL_STORE_close(ctx);
 
   EVP_cleanup();
   ERR_free_strings();

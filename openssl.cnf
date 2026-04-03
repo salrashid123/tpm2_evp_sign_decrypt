@@ -1,0 +1,13 @@
+[openssl_init]
+providers = provider_sect
+ssl_conf = ssl_sect
+
+[provider_sect]
+default = default_sect
+tpm2 = tpm2_sect
+
+[tpm2_sect]
+activate = 1
+
+[default_sect]
+activate = 1

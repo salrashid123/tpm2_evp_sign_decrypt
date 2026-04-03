@@ -20,83 +20,44 @@
 // Start TPM
 #include <tss2/tss2_mu.h>
 #include <tss2/tss2_esys.h>
-#include <tpm2-tss-engine.h>
+
+#include <openssl/provider.h>
+
+#include <openssl/core_names.h>
+#include <openssl/store.h>
+#include <openssl/ui.h>
 // End TPM
 
-/*
-Sample app that mints a JWTAccess token using RSA keypair derived from a Google Service Account .p12.
-
-This is NOT supported by google and is provided as-is.  
-
-(also, i dont' really know c...there are  somethings i didn't free() or have done incorrectly in c)
-
-ref: https://medium.com/google-cloud/faster-serviceaccount-authentication-for-google-cloud-platform-apis-f1355abc14b2
-
-1) Download Service account .p12 file
-2) Extract public/private keypair
-    openssl pkcs12 -in svc_account.p12  -nocerts -nodes -passin pass:notasecret | openssl rsa -out private.pem
-    openssl rsa -in private.pem -outform PEM -pubout -out public.pem
-3) Embed the key into a TPM 
-    install TPM2-Tools
-    https://github.com/tpm2-software/tpm2-tools/blob/master/INSTALL.md
-
-    tpm2_createprimary -C o -g sha256 -G rsa -c primary.ctx
-    tpm2_import -C primary.ctx -G rsa -i private.pem -u key.pub -r key.prv
-    tpm2_load -C primary.ctx -u key.pub -r key.prv -c key.ctx
-    tpm2_evictcontrol -C o -c key.ctx 0x81010002
-
-4) Edit issuer,subject,audience fields incode below
-   Get the issuer, subject email for the service account and apply it into code below.
-
-5) Compile
-    apt-get install libcurl4-openssl-dev libssl-dev
-
-    git clone https://github.com/DaveGamble/cJSON.git
-    cd cJSON
-    make
-
-    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu/engines-1.1
-
-    default: gcc gcs_auth.c -lcjson -lcrypto -o gcs_auth
-
-    or with a TPM (requires tpm2-tss-engine installed)
-    gcc gcs_auth.c -L/usr/lib/x86_64-linux-gnu/engines-1.1/ -lcrypto -ltpm2tss -lcjson -o gcs_auth
-
-6) Run
-     ./gcs_auth
-
-7) Use the JWT to access a service like pubsub:
-    export TOKEN=<..>
-    curl -v -H "Authorization: Bearer $TOKEN" -H "pubsub.googleapis.com" -o /dev/null -w "%{http_code}\n" https://pubsub.googleapis.com/v1/projects/yourPROJECT/topics
-
-https://github.com/googleapis/google-cloud-cpp
-
-Attribution:
-  https://incolumitas.com/2012/10/29/web-safe-base64-encodedecode-in-c/
-  https://github.com/DaveGamble/cJSON.git
-
-References:
-  https://medium.com/google-cloud/faster-serviceaccount-authentication-for-google-cloud-platform-apis-f1355abc14b2
-  https://github.com/googleapis/google-cloud-cpp/blob/master/google/cloud/storage/internal/openssl_util.cc#L215
-  https://github.com/salrashid123/salrashid123.github.io/tree/master/tpm_openssl_client
-*/
 
 typedef unsigned char byte;
 
 #define UNUSED(x) ((void)x)
 const char hn[] = "SHA256";
 
-const char *issuer = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
-const char *subject = "YOUR_SERVICE_ACCOUNT@$PROJECT_ID.iam.gserviceaccount.com";
-const char *audience = "https://pubsub.googleapis.com/google.pubsub.v1.Publisher";
-const char *pubfilename = "public.pem";
-const char *privfilename = "private.pem";
+const char *issuer = "tpm-sa@core-eso.iam.gserviceaccount.com";
+const char *subject = "tpm-sa@core-eso.iam.gserviceaccount.com";
 
-/* Returns 0 for success, non-0 otherwise */
-int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey);
+const char *pubfilename = "public.pem";
+const char *privfilename = "private.tss";
+
+const char *password = "";
+
 
 /* Prints a buffer to stdout. Label is optional */
 void print_it(const char *label, const byte *buff, size_t len);
+
+int provide_password(char *buf, int size, int rwflag, void *u)
+{
+    const char *password = (char *)u;
+
+    size_t len = strlen(password);
+    if (len > size)
+        len = size;
+
+    memcpy(buf, password, len);
+    return len;
+}
+
 
 #define MAX_B64_PADDING 0x2
 #define B64_PAD_CHAR "="
@@ -144,34 +105,19 @@ struct string
 int main(int argc, char *argv[])
 {
 
-  const char *engine_id = "tpm2tss";  // for TPM
-  //const char *engine_id = "rdrand";  // for default
-
-  printf("Loading certificates using engine %s.\n", engine_id);
-
-  ENGINE *e;
-
-  ENGINE_load_builtin_engines();
-
-  e = ENGINE_by_id(engine_id);
-  if (!e)
-  {
-    printf("Unable to get Engine:\n");
-    return -1;
-  }
-  if (!ENGINE_init(e))
-  {
-    printf("Unable to init Engine:\n");
-    ENGINE_free(e);
-    return -1;
-  }
-
-  ENGINE_set_default_ciphers(e);
-
   OpenSSL_add_all_algorithms();
 
-  EVP_PKEY *vkey, *skey;
-  //FILE *pubf = fopen(pubfilename, "rb");
+  OSSL_PROVIDER* provider;
+
+  OSSL_PROVIDER *defprov = NULL, *tpm2prov = NULL;
+
+
+  if ((defprov = OSSL_PROVIDER_load(NULL, "default")) == NULL)
+      exit(EXIT_FAILURE);
+
+  if ((tpm2prov = OSSL_PROVIDER_load(NULL, "tpm2")) == NULL)
+      exit(EXIT_FAILURE);
+
 
   //printf("Loading public key \n");
   //vkey = PEM_read_PUBKEY(pubf, NULL, NULL, NULL);
@@ -179,47 +125,6 @@ int main(int argc, char *argv[])
   //FILE *privf = fopen(privfilename, "rb");
   printf("Loading private key \n");
 
-  // Start default
-  //skey = PEM_read_PrivateKey(privf, NULL, NULL, NULL);
-  // End default
-
-  // Start TPM
-  //
-  TPM2_DATA *tpm2Data = NULL;
-  //tpm2tss_tpm2data_read(privfilename, &tpm2Data);
-  tpm2tss_tpm2data_readtpm(0x81010002, &tpm2Data);
-  printf("Loaded key uses alg-id %x\n", tpm2Data->pub.publicArea.type);
-
-  if (tpm2Data->emptyAuth)
-  {
-    printf("EmptyAuth\n");
-    tpm2Data->userauth.size = 0;
-  }
-  else
-  {
-    printf("Get User Auth\n");
-  }
-
-  switch (tpm2Data->pub.publicArea.type)
-  {
-  case TPM2_ALG_RSA:
-    printf(" TPM2_ALG_RSA\n");
-    skey = tpm2tss_rsa_makekey(tpm2Data);
-    break;
-  case TPM2_ALG_ECC:
-    printf(" TPM2_ALG_ECC\n");
-    skey = tpm2tss_ecc_makekey(tpm2Data);
-    break;
-  default:
-    printf(" TPM2TSS_R_UNKNOWN_ALG\n");
-  }
-  if (!skey)
-  {
-    printf("TPM2TSS_R_CANNOT_MAKE_KEY\n");
-  }
-  printf("Loaded key uses private handle %x\n", tpm2Data->handle);
-  //
-  // End TPM
 
   cJSON *header = cJSON_CreateObject();
   cJSON *alg = NULL;
@@ -238,16 +143,16 @@ int main(int argc, char *argv[])
 
   cJSON *iss = NULL;
   cJSON *sub = NULL;
-  cJSON *aud = NULL;
   cJSON *iat = NULL;
+  cJSON *scope = NULL;
   cJSON *exp = NULL;
 
   iss = cJSON_CreateString(issuer);
   cJSON_AddItemToObject(claims, "iss", iss);
   sub = cJSON_CreateString(subject);
   cJSON_AddItemToObject(claims, "sub", sub);
-  aud = cJSON_CreateString(audience);
-  cJSON_AddItemToObject(claims, "aud", aud);
+  scope = cJSON_CreateString("https://www.googleapis.com/auth/cloud-platform");
+  cJSON_AddItemToObject(claims, "scope", scope);
   iat = cJSON_CreateNumber(now);
   cJSON_AddItemToObject(claims, "iat", iat);
   exp = cJSON_CreateNumber(expire_on);
@@ -262,152 +167,83 @@ int main(int argc, char *argv[])
   char *j1 = concat(b64jwt, ".");
   char *jwt = concat(j1, b64claim);
 
-  int len = strlen(jwt);
-  byte msg[len];
-
-  string2ByteArray(jwt, msg);
-
-  byte *sig = NULL;
+  unsigned char *sig = NULL;
   size_t slen = 0;
+  
 
-  int rc = sign_it(msg, sizeof(msg), &sig, &slen, skey);
+    OSSL_STORE_CTX *ctx = NULL;
+    UI_METHOD *ui_method = NULL;
+
+    EVP_MD_CTX *sctx = NULL;
+    EVP_MD_CTX *vctx = NULL;
+
+    if (!(ui_method = UI_UTIL_wrap_read_pem_callback(provide_password, 0)))
+        goto error;
+
+    if ((ctx = OSSL_STORE_open(privfilename, ui_method, (void *)password, NULL, NULL))) {
+        while (OSSL_STORE_eof(ctx) == 0) {
+            OSSL_STORE_INFO *info = OSSL_STORE_load(ctx);
+            if (info && OSSL_STORE_INFO_get_type(info) == OSSL_STORE_INFO_PKEY) {
+                EVP_PKEY *pkey;
+
+
+                if ((pkey = OSSL_STORE_INFO_get0_PKEY(info))) {
+
+                    // // sign
+                    if (!(sctx = EVP_MD_CTX_new()))
+                        goto error;
+
+                    if (!EVP_DigestSignInit_ex(sctx, NULL, "SHA-256", NULL, "provider=tpm2", pkey, NULL)
+                            || !EVP_DigestSign(sctx, NULL, &slen, (const unsigned char *)jwt, strlen(jwt)))
+                        goto error;
+
+                    if (!(sig = OPENSSL_malloc(slen)))
+                        goto error;
+
+                    if (!EVP_DigestSign(sctx, sig, &slen, (const unsigned char *)jwt, strlen(jwt)))
+                        goto error;
+
+
+                    // verify
+
+                    if (!(vctx = EVP_MD_CTX_new()))
+                        goto error;
+
+                    if (!EVP_DigestVerifyInit_ex(vctx, NULL, "SHA-256", NULL, "provider=tpm2", pkey, NULL)
+                            || EVP_DigestVerify(vctx, sig, slen, (const unsigned char *)jwt, strlen(jwt)) != 1)
+                        goto error;
+                  
+                }
+              }
+              OSSL_STORE_INFO_free(info);
+            }
+          }
+  // End TPM
+
   char *b64sig = Base64Encode((char *)sig, slen);
 
-  if (sig)
-    OPENSSL_free(sig);
-
-  if (skey)
-    EVP_PKEY_free(skey);
-
-  if (vkey)
-    EVP_PKEY_free(vkey);
-
-  char *final = strcat(strcat(jwt, "."), b64sig);
+  char *final = concat(concat(jwt, "."), b64sig);
 
   printf("%s\n", final);
 
-  ENGINE_finish(e);
-  ENGINE_free(e);
 
-  EVP_cleanup();
-  ERR_free_strings();
+error:
+
+    OPENSSL_free(sig);
+    EVP_MD_CTX_free(vctx);
+    EVP_MD_CTX_free(sctx);
+
+    OSSL_STORE_close(ctx);
+    UI_destroy_method(ui_method);
+
+    OSSL_PROVIDER_unload(tpm2prov);
+    OSSL_PROVIDER_unload(defprov);
+
+    EVP_cleanup();
+    ERR_free_strings();
+
 }
 
-// From: https://wiki.openssl.org/index.php/EVP_Signing_and_Verifying
-int sign_it(const byte *msg, size_t mlen, byte **sig, size_t *slen, EVP_PKEY *pkey)
-{
-  /* Returned to caller */
-  int result = -1;
-
-  if (!msg || !mlen || !sig || !pkey)
-  {
-    assert(0);
-    return -1;
-  }
-
-  if (*sig)
-    OPENSSL_free(*sig);
-
-  *sig = NULL;
-  *slen = 0;
-
-  EVP_MD_CTX *ctx = NULL;
-
-  do
-  {
-    ctx = EVP_MD_CTX_create();
-    assert(ctx != NULL);
-    if (ctx == NULL)
-    {
-      printf("EVP_MD_CTX_create failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    const EVP_MD *md = EVP_get_digestbyname(hn);
-    assert(md != NULL);
-    if (md == NULL)
-    {
-      printf("EVP_get_digestbyname failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    int rc = EVP_DigestInit_ex(ctx, md, NULL);
-    assert(rc == 1);
-    if (rc != 1)
-    {
-      printf("EVP_DigestInit_ex failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    rc = EVP_DigestSignInit(ctx, NULL, md, NULL, pkey);
-    assert(rc == 1);
-    if (rc != 1)
-    {
-      printf("EVP_DigestSignInit failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    rc = EVP_DigestSignUpdate(ctx, msg, mlen);
-    assert(rc == 1);
-    if (rc != 1)
-    {
-      printf("EVP_DigestSignUpdate failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    size_t req = 0;
-    rc = EVP_DigestSignFinal(ctx, NULL, &req);
-    assert(rc == 1);
-    if (rc != 1)
-    {
-      printf("EVP_DigestSignFinal failed (1), error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    assert(req > 0);
-    if (!(req > 0))
-    {
-      printf("EVP_DigestSignFinal failed (2), error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    *sig = (byte *)OPENSSL_malloc(req);
-
-    assert(*sig != NULL);
-    if (*sig == NULL)
-    {
-      printf("OPENSSL_malloc failed, error 0x%lx\n", ERR_get_error());
-      break; /* failed */
-    }
-
-    *slen = req;
-    rc = EVP_DigestSignFinal(ctx, *sig, slen);
-    assert(rc == 1);
-    if (rc != 1)
-    {
-      printf("EVP_DigestSignFinal failed (3), return code %d, error 0x%lx\n", rc, ERR_get_error());
-      break; /* failed */
-    }
-
-    assert(req == *slen);
-    if (rc != 1)
-    {
-      printf("EVP_DigestSignFinal failed, mismatched signature sizes %ld, %ld", req, *slen);
-      break; /* failed */
-    }
-
-    result = 0;
-
-  } while (0);
-
-  if (ctx)
-  {
-    EVP_MD_CTX_destroy(ctx);
-    ctx = NULL;
-  }
-
-  return !!result;
-}
 
 void print_it(const char *label, const byte *buff, size_t len)
 {
